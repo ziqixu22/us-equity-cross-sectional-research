@@ -1,0 +1,1 @@
+# us-equity-cross-sectional-research
