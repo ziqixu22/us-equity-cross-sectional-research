@@ -1,0 +1,25 @@
+project_name: us_equity_cross_sectional
+data_adapter: yahoo_daily_bars
+universe_snapshot: data/metadata/universe_YYYY-MM-DD.csv
+start_date: "2010-01-01"
+feature_windows:
+  momentum_lookback: 252
+  momentum_skip: 21
+  reversal_lookback: 5
+  volatility_lookback: 20
+  liquidity_short: 5
+  liquidity_long: 60
+label:
+  execution_lag_sessions: 1
+  holding_sessions: 5
+models:
+  - zero_baseline
+  - univariate_sort
+  - ridge
+  - hist_gradient_boosting
+portfolio:
+  rebalance_every_sessions: 5
+  quantile: 0.20
+  long_gross_weight: 0.50
+  short_gross_weight: -0.50
+cost_bps_one_way: [0, 5, 10, 20]

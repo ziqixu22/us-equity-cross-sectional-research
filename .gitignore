@@ -1,0 +1,19 @@
+# Environments and local settings
+.venv/
+.env
+.DS_Store
+
+# Raw data, caches, and large generated artifacts
+data/raw/
+data/interim/
+data/processed/
+data/manifests/*.json
+reports/figures/
+reports/*.pdf
+
+# Notebook runtime state
+.ipynb_checkpoints/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
