@@ -74,10 +74,8 @@ The first version intentionally uses a small feature set rather than hundreds of
 
 ### 5.1 Twelve-Month Momentum Excluding the Most Recent Month
 
-A standard momentum-style feature is
-
 $$
-\text{MOM}_{i,t}
+\mathrm{MOM}_{i,t}
 =
 \frac{C_{i,t-21}}{C_{i,t-252}}-1.
 $$
@@ -86,14 +84,10 @@ The most recent 21 trading sessions are skipped to separate medium-term momentum
 
 ### 5.2 Five-Day Reversal
 
-Short-horizon reversal is represented by
-
 $$
-\text{REV5}_{i,t}
+\mathrm{REV5}_{i,t}
 =-\left(\frac{C_{i,t}}{C_{i,t-5}}-1\right).
 $$
-
-A stock that recently rose sharply therefore receives a more negative reversal signal.
 
 ### 5.3 Twenty-Day Realized Volatility
 
@@ -108,7 +102,7 @@ realized volatility is
 $$
 \sigma_{i,t}^{(20)}
 =
-\sqrt{252}\;\operatorname{StdDev}
+\sqrt{252}\;\mathrm{SD}
 \left(r_{i,t-19},\ldots,r_{i,t}\right).
 $$
 
@@ -133,7 +127,7 @@ $$
 The liquidity-activity ratio is
 
 $$
-\text{DVRATIO}_{i,t}
+\mathrm{DVRATIO}_{i,t}
 =
 \frac{\overline{DV}_{i,t}^{(5)}}{\overline{DV}_{i,t}^{(60)}}.
 $$
@@ -141,24 +135,18 @@ $$
 ### 5.5 Log Average Dollar Volume
 
 $$
-\text{LOGADV}_{i,t}
+\mathrm{LOGADV}_{i,t}
 =
 \log\left(\overline{DV}_{i,t}^{(60)}\right).
 $$
 
-The log transform reduces scale skew across securities with very different liquidity levels.
-
 ## 6. Model Sequence
-
-The project follows a simple-to-complex model hierarchy so that incremental value is visible.
 
 ### 6.1 Zero-Prediction Baseline
 
 $$
 \hat y_{i,t}=0.
 $$
-
-Any model should improve meaningfully over this trivial benchmark.
 
 ### 6.2 Univariate Sorts
 
@@ -179,8 +167,6 @@ $$
 \right].
 $$
 
-Ridge is useful because it is interpretable, stable under correlated predictors, and provides a strong regularized linear baseline.
-
 Prediction is
 
 $$
@@ -189,37 +175,15 @@ $$
 
 ### 6.4 Gradient Boosting
 
-One nonlinear boosting model is planned as the complexity benchmark. In additive form,
-
 $$
 F_M(x)=\sum_{m=1}^{M}\eta f_m(x),
 $$
 
 where each $f_m$ is a weak learner and $\eta$ is the learning rate.
 
-The point of this model is not to maximize complexity; it is to test whether nonlinear interactions add stable out-of-sample ranking power beyond Ridge.
-
 ## 7. Chronological Validation
 
 Random K-fold cross-validation is inappropriate because adjacent panel observations share temporal structure and forward labels overlap.
-
-The project uses date-based folds and requires training labels to mature before the next validation/test signal date.
-
-Conceptually:
-
-```text
-feature date t
-    |
-    | information available
-    v
-execution at close t+1
-    |
-    v
-forward return interval
-    |
-    v
-label ends at t+6
-```
 
 A training observation is usable only if
 
@@ -229,18 +193,16 @@ $$
 \text{first validation signal date}.
 $$
 
-This prevents forward-return information from leaking across folds.
-
 ## 8. Prediction Evaluation
 
 ### 8.1 Rank Information Coefficient
 
-The primary cross-sectional prediction metric is Spearman rank correlation between model score and future return:
+The primary cross-sectional prediction metric is Spearman rank correlation:
 
 $$
 IC_t
 =
-\operatorname{Corr}_{\text{Spearman}}
+\rho_{\mathrm{Spearman}}
 \left(\hat y_{i,t},y_{i,t}\right).
 $$
 
@@ -252,13 +214,9 @@ $$
 \frac{1}{T}\sum_{t=1}^{T}IC_t.
 $$
 
-A stable positive IC means higher-scored stocks tend to realize higher future relative returns.
-
 ### 8.2 Spread Monotonicity
 
-Stocks are sorted into score quantiles. A useful model should ideally show increasing average future returns from low-score to high-score portfolios.
-
-If $Q_{1,t},\ldots,Q_{5,t}$ are quintiles, desirable behavior is approximately
+If $Q_{1,t},\ldots,Q_{5,t}$ are score quintiles, desirable behavior is approximately
 
 $$
 \mathbb{E}[R_{Q_1}]
@@ -271,15 +229,13 @@ $$
 
 At each rebalance date, the top quintile is long and the bottom quintile is short.
 
-Initial target exposure is
-
 $$
 \sum_i w_{i,t}^{+}=0.5,
 \qquad
 \sum_i w_{i,t}^{-}=-0.5,
 $$
 
-so the portfolio is approximately dollar neutral:
+so
 
 $$
 \sum_i w_{i,t}=0.
@@ -288,33 +244,27 @@ $$
 The gross long-short return is
 
 $$
-R_t^{LS}
-=
-\sum_i w_{i,t}r_{i,t+1}.
+R_t^{LS}=\sum_i w_{i,t}r_{i,t+1}.
 $$
 
 ## 10. Turnover and Trading Costs
 
-Turnover at rebalance $t$ is measured from pre-trade weights:
-
 $$
-\text{Turnover}_t
+\mathrm{Turnover}_t
 =
-\sum_i
-\left|w_{i,t}^{\text{target}}-w_{i,t}^{\text{pretrade}}\right|.
+\sum_i\left|w_{i,t}^{\mathrm{target}}-w_{i,t}^{\mathrm{pretrade}}\right|.
 $$
 
 With one-way cost rate $c$,
 
 $$
-\text{Cost}_t
-=c\times\text{Turnover}_t.
+\mathrm{Cost}_t=c\times\mathrm{Turnover}_t.
 $$
 
 Net return becomes
 
 $$
-R_t^{net}=R_t^{gross}-\text{Cost}_t.
+R_t^{net}=R_t^{gross}-\mathrm{Cost}_t.
 $$
 
 The pre-registered sensitivity grid is 0, 5, 10, and 20 bps one-way cost.
@@ -322,8 +272,6 @@ The pre-registered sensitivity grid is 0, 5, 10, and 20 bps one-way cost.
 ## 11. Portfolio Evaluation Metrics
 
 ### Annualized Return
-
-For periodic returns $R_t$,
 
 $$
 R_{ann}
@@ -334,16 +282,14 @@ $$
 
 $$
 \sigma_{ann}
-=\sqrt{252}\;\operatorname{StdDev}(R_t).
+=\sqrt{252}\;\mathrm{SD}(R_t).
 $$
 
 ### Sharpe Ratio
 
-Ignoring the risk-free rate in the first prototype,
-
 $$
 SR
-=\frac{\mathbb{E}[R_t]}{\operatorname{StdDev}(R_t)}\sqrt{252}.
+=\frac{\mathbb{E}[R_t]}{\mathrm{SD}(R_t)}\sqrt{252}.
 $$
 
 ### Maximum Drawdown
@@ -354,7 +300,7 @@ $$
 W_t=\prod_{s\le t}(1+R_s),
 $$
 
-then drawdown is
+then
 
 $$
 DD_t=\frac{W_t}{\max_{u\le t}W_u}-1,
@@ -375,8 +321,6 @@ The planned robustness analysis compares:
 - liquidity restrictions
 - 0/5/10/20 bps cost assumptions
 - year-by-year Rank IC and portfolio performance
-
-The purpose is to distinguish a genuinely persistent signal from one dependent on a single favorable period or assumption.
 
 ## 13. Current Results / Implementation Status
 
@@ -403,11 +347,11 @@ Current status:
 
 ```text
 .
-├── configs/                  # Fixed experiment parameters
-├── data/                     # Documentation / metadata; raw bars excluded
-├── docs/                     # Data contracts and research notes
+├── configs/
+├── data/
+├── docs/
 ├── src/us_equity_cross_sectional/
-├── tests/                    # Timing and accounting tests
+├── tests/
 ├── IMPLEMENTATION_PLAN.md
 ├── pyproject.toml
 └── README.md
@@ -425,8 +369,6 @@ pip install -e ".[dev]"
 ```
 
 ## 16. Interview Summary
-
-A concise way to explain this project is:
 
 > I designed a cross-sectional equity research pipeline where the main challenge is not just choosing a model, but preventing timing leakage and testing whether ranking power survives realistic implementation assumptions. I pre-specify five price/liquidity features, compare zero and univariate baselines with Ridge and one boosting model, evaluate with date-level Rank IC and quintile spreads, and then convert scores into a dollar-neutral long-short portfolio with explicit turnover and transaction-cost accounting. The final test is intentionally locked until the pipeline is complete.
 
