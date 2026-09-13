@@ -420,3 +420,8 @@ python -m pytest tests/
 ## 19. License and Data Usage
 
 Code uses the MIT License. Data licenses are separate. Raw Yahoo, SEC EDGAR, WRDS/CRSP, or other vendor data should not be committed to this repository.
+
+
+## Learn it for interviews
+
+Use the project-specific [Interview Guide](docs/INTERVIEW_GUIDE.md) for a 60-second walkthrough, key concepts, likely questions, reproducible study steps, and the honest boundary of the work.
