@@ -6,6 +6,7 @@ import pandas as pd
 
 from us_equity_cross_sectional.features.labels import validate_weekly_panel_keys
 from us_equity_cross_sectional.fundamentals.market_cap import build_market_cap
+from us_equity_cross_sectional.fundamentals.sec_facts import standalone_quarter, ttm_from_quarters
 
 FLOW_VARIABLES = ("revenue", "net_income", "operating_income", "gross_profit", "capex")
 STOCK_VARIABLES = ("assets", "liabilities", "stockholders_equity", "cash")
@@ -19,24 +20,54 @@ def _asof(facts: pd.DataFrame, signal_time: pd.Timestamp) -> pd.DataFrame:
 
 
 def _quarterly(flow: pd.DataFrame) -> pd.DataFrame:
-    rows=[]
+    """Standalone-quarter each duration fact via the tested ``standalone_quarter`` primitive.
+
+    A fiscal period with no compatible prior cumulative duration (or any other
+    incompatibility ``standalone_quarter`` rejects) is skipped rather than
+    raised, so one bad issuer-period never crashes the panel build.
+    """
+    rows = []
     for _, group in flow.groupby(["security_id", "variable", "unit", "fiscal_year"], dropna=False):
-        group=group.sort_values("fiscal_period_end"); by_fp={r.fiscal_period:r for r in group.itertuples()}
-        for fp, prior in (("Q1",None),("Q2","Q1"),("Q3","Q2"),("FY","Q3")):
-            row=by_fp.get(fp)
-            if row is None or (prior and by_fp.get(prior) is None): continue
-            value=row.value if prior is None else row.value-by_fp[prior].value
-            rows.append({"security_id":row.security_id,"variable":row.variable,"unit":row.unit,"end":row.fiscal_period_end,"value":value,"available_at":row.available_at,"accessions":[row.accession_number] if prior is None else [by_fp[prior].accession_number,row.accession_number],"row":row})
+        group = group.sort_values("fiscal_period_end")
+        by_fp = {r.fiscal_period: r for r in group.itertuples()}
+        for fp, prior in (("Q1", None), ("Q2", "Q1"), ("Q3", "Q2"), ("FY", "Q3")):
+            row = by_fp.get(fp)
+            if row is None:
+                continue
+            prior_row = by_fp.get(prior) if prior else None
+            if prior and prior_row is None:
+                continue
+            try:
+                value = standalone_quarter(row.value, prior_row.value if prior_row is not None else None, fp)
+            except ValueError:
+                continue
+            accessions = [row.accession_number] if prior is None else [prior_row.accession_number, row.accession_number]
+            rows.append({
+                "security_id": row.security_id, "variable": row.variable, "unit": row.unit,
+                "end": row.fiscal_period_end, "value": value, "available_at": row.available_at,
+                "accessions": accessions, "row": row,
+            })
     return pd.DataFrame(rows)
 
 
 def _ttm(flow: pd.DataFrame) -> dict[str, object]:
-    q=_quarterly(flow)
-    if len(q)<4: return {}
-    q=q.sort_values("end").tail(4)
-    if len(q)!=4 or q.unit.nunique()!=1: return {}
-    latest=q.iloc[-1]; lineage=list(dict.fromkeys(a for values in q.accessions for a in values))
-    return {"value":q.value.sum(),"available_at":q.available_at.max(),"component_accessions":json.dumps(lineage),"row":latest.row}
+    """Sum the latest four standalone quarters via the tested ``ttm_from_quarters`` primitive.
+
+    Any incompatibility ``ttm_from_quarters`` rejects (fewer than four
+    quarters, mixed units, or a missing/NaN component) yields no TTM value
+    rather than a fabricated partial sum.
+    """
+    q = _quarterly(flow)
+    if len(q) < 4:
+        return {}
+    q = q.sort_values("end").tail(4)
+    try:
+        value = ttm_from_quarters(list(q.value), list(q.unit))
+    except ValueError:
+        return {}
+    latest = q.iloc[-1]
+    lineage = list(dict.fromkeys(a for values in q.accessions for a in values))
+    return {"value": value, "available_at": q.available_at.max(), "component_accessions": json.dumps(lineage), "row": latest.row}
 
 
 def _lineage(prefix: str, row: object, signal_time: pd.Timestamp) -> dict[str, object]:
