@@ -1,0 +1,26 @@
+# Fundamental Factor Decision Table
+
+Decisions below are based only on accounting meaning, mapping quality, PIT
+defensibility, coverage, financial-sector comparability, and data quality —
+**never** on observed future-return performance, IC, or backtest results
+(none of which are computed anywhere in this task). See
+`reports/fundamental_factor_audit.md` for the full evidence behind each row.
+
+| Factor | Decision | Rationale |
+|---|---|---|
+| book_to_market | **INCLUDE** | Universal concept mapping (`StockholdersEquity` present in all 8 audited issuers, including JPM); PIT logic is a direct division inheriting the panel's own `available_at`/market-cap-eligibility gates with no additional temporal risk; coverage bounded only by the well-characterized 1.2% market-cap-ineligible rate. No open data-quality question. |
+| earnings_yield | **INCLUDE** | Same basis as `book_to_market`: `NetIncomeLoss` is universally mapped (including JPM), PIT logic adds no new risk, coverage bounded only by market-cap eligibility. Negative values from a net loss are a legitimate, sign-preserving result, not a defect. |
+| sales_to_price | **INCLUDE WITH FLAG** | Accounting meaning and mapping are sound (`Revenue*` concepts present in all 8 issuers), but the panel-level `revenue_ttm` already shows 3.6% missingness (248/6,968 rows) not explained by unmapped concepts — most likely a TTM four-quarter-compatibility gap. Flag: usable, but the source of the 248-row gap should be diagnosed (by inspecting the real panel, not by this task) before treating its coverage as fully understood. |
+| roa | **INCLUDE WITH FLAG** | Accounting meaning is sound, `Assets`/`NetIncomeLoss` are universally mapped, and the no-fabrication rule for missing prior-year assets is directly unit-tested and PIT-safe (calendar-based, order-independent, no future information). Flag: the real-panel match rate for the prior-year lookup has never been measured (no cached artifact contains it, and this audit does not rebuild the panel to obtain it), so actual coverage is unverified pending that measurement. Every security's earliest ~1 year of history will structurally lack this factor by design — expected PIT behavior, not a defect. |
+| gross_profitability | **INCLUDE WITH FLAG** | Same PIT/prior-year-join caveat as `roa`, plus a documented, sector-driven mapping gap: `docs/sec_concept_mapping.md` states `GrossProfit` is unavailable for 3 of 8 issuers (XOM, JPM, WMT). Per the task's explicit rule, this is treated as a legitimate limitation of financial-sector (and some non-financial-sector) applicability, not a defect to be patched with an invented substitute concept. Flag: do not compare this factor across issuers with structurally different mapping availability, and note the unresolved discrepancy between the mapping doc and the existing panel audit's "0 missing" figure for `gross_profit_ttm` (see audit report). |
+| operating_margin | **INCLUDE WITH FLAG** | Same-row ratio with no added temporal risk, but `docs/sec_concept_mapping.md` documents `OperatingIncomeLoss` as unavailable for 2 of 8 issuers (XOM, JPM) — again treated as a legitimate sector/issuer limitation rather than patched. Flag: the same unresolved discrepancy against the existing panel audit's "0 missing" figure applies here and should be reconciled before this factor's coverage is trusted. |
+| leverage | **INCLUDE WITH FLAG** | Direct, same-row balance-sheet ratio with no cross-period lookup and no market-cap dependency — structurally the simplest and most defensible of the quality factors. Flag only for the single documented issuer-level mapping gap (`Liabilities` "missing for KO" per the mapping doc) and its unresolved discrepancy against the panel audit's "0 missing" figure; this is a narrower, single-issuer version of the same data-quality caveat affecting `gross_profitability` and `operating_margin`. |
+| asset_growth | **INCLUDE WITH FLAG** | `Assets` is universally mapped (including JPM) and the ratio's accounting meaning is unambiguous. Flag for the same reason as `roa`: the prior-year join's real-panel match rate is unverified, and the earliest ~1 year of each security's history is structurally missing by design. |
+
+## Summary
+
+- **INCLUDE:** `book_to_market`, `earnings_yield` — universal mapping, no open data-quality questions, coverage fully bounded by an already-quantified gate (market-cap eligibility).
+- **INCLUDE WITH FLAG:** `sales_to_price`, `roa`, `gross_profitability`, `operating_margin`, `leverage`, `asset_growth` — each is accounting-sound and PIT-defensible, but carries at least one explicit, named limitation (a documented sector/issuer mapping gap, an unverified prior-year-join match rate, or an unresolved discrepancy between two existing artifacts) that should be read before using the factor in downstream research.
+- **DEFER:** none. No factor in this set has an accounting-meaning, mapping, or PIT defect serious enough to withhold it entirely; every open question is either already bounded (market-cap eligibility) or explicitly flagged for follow-up (mapping-gap discrepancies, unverified join coverage) rather than hidden.
+
+No decision above was informed by, or would change based on, any future-return, IC, or backtest result — none were computed.
