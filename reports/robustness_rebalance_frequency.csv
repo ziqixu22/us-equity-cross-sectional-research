@@ -1,0 +1,3 @@
+rebalance,n_dates,mean_ic
+weekly (all dates),678,0.05474785784520298
+biweekly (every 2nd date),339,0.07220115184716955
