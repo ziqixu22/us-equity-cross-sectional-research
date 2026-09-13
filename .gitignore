@@ -8,8 +8,10 @@ data/raw/
 data/interim/
 data/processed/
 data/manifests/*.json
-reports/figures/
 reports/*.pdf
+# Note: reports/figures/ is intentionally NOT ignored -- these are
+# final, small (<2MB total) generated deliverable figures referenced
+# throughout reports/ and README.md, not scratch/cache output.
 
 # Notebook runtime state
 .ipynb_checkpoints/
