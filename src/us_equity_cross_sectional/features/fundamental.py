@@ -131,11 +131,24 @@ def _prior_year_value(
     working["_target_date"] = working["research_date"] - pd.Timedelta(days=365)
 
     source = panel[["security_id", "research_date", value_column]].dropna(subset=["research_date"])
-    source = source.sort_values(["security_id", "research_date"]).rename(
+    source = source.sort_values("research_date").rename(
         columns={"research_date": "_match_date", value_column: "_prior_value"}
     )
 
-    working = working.sort_values(["security_id", "_target_date"])
+    # ``pd.merge_asof`` requires the "on" column to be sorted for the *whole*
+    # frame even when ``by`` is also given -- sorting by (security_id, date)
+    # only leaves each security's block internally sorted, but the overall
+    # ``_target_date``/``_match_date`` column still jumps backwards wherever
+    # ``security_id`` changes, which pandas rejects ("left keys must be
+    # sorted") on any panel with more than one security whose date ranges
+    # interleave. This was invisible in this module's original small,
+    # single/two-security synthetic test fixtures (where the compound sort
+    # happened to also be globally date-monotonic) and only surfaced when
+    # run against the real multi-security panel. Sorting by the date column
+    # alone (not compounded with security_id first) is what ``merge_asof``
+    # actually requires; ``by="security_id"`` below still restricts each
+    # match to the same security.
+    working = working.sort_values("_target_date")
     merged = pd.merge_asof(
         working,
         source,

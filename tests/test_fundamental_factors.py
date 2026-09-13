@@ -143,6 +143,38 @@ class FundamentalFactorTest(unittest.TestCase):
         row_2022 = out.loc[panel["research_date"].eq(pd.Timestamp("2022-01-07"))].iloc[0]
         self.assertTrue(pd.isna(row_2022["assets_prior_year_comparable"]))
 
+    def test_prior_year_match_across_interleaved_securities_does_not_crash(self):
+        # Regression test: pd.merge_asof requires its "on" column to be
+        # sorted for the WHOLE frame even when "by" is supplied. A panel
+        # with two securities whose weekly date ranges interleave (as any
+        # real multi-issuer panel's does) previously raised
+        # "ValueError: left keys must be sorted" because the working frame
+        # was sorted by (security_id, target_date) rather than by
+        # target_date alone. This panel deliberately interleaves AAA's and
+        # BBB's dates so that a compound (security_id, date) sort would not
+        # be globally date-monotonic.
+        rows = []
+        for i in range(6):
+            week = pd.Timestamp("2023-01-06") + pd.Timedelta(weeks=i)
+            rows.append(_row(week, "AAA", assets=100.0 + i))
+            rows.append(_row(week, "BBB", assets=200.0 + i))
+        for i in range(6):
+            week = pd.Timestamp("2024-01-05") + pd.Timedelta(weeks=i)
+            rows.append(_row(week, "AAA", assets=110.0 + i, net_income_ttm=22.0))
+            rows.append(_row(week, "BBB", assets=210.0 + i, net_income_ttm=42.0))
+        panel = _panel(*rows)
+
+        out = compute_fundamental_factors(panel)  # must not raise
+
+        aaa_2024 = out.loc[
+            (panel["security_id"] == "AAA") & (panel["research_date"] == pd.Timestamp("2024-01-05"))
+        ].iloc[0]
+        self.assertAlmostEqual(100.0, aaa_2024["assets_prior_year_comparable"])
+        bbb_2024 = out.loc[
+            (panel["security_id"] == "BBB") & (panel["research_date"] == pd.Timestamp("2024-01-05"))
+        ].iloc[0]
+        self.assertAlmostEqual(200.0, bbb_2024["assets_prior_year_comparable"])
+
     def test_summarize_factor_coverage(self):
         panel = _panel(
             _row("2024-06-07", "AAA", market_cap_eligible=True),

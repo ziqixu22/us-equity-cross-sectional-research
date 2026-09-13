@@ -85,7 +85,17 @@ def build_weekly_fundamental_panel(signals: pd.DataFrame, facts: pd.DataFrame, s
     if "multiple_share_class_flag" not in facts: facts["multiple_share_class_flag"]=pd.NA
     records=[]
     for _, signal in signals.iterrows():
-        current=_asof(facts,pd.to_datetime(signal.signal_time,utc=True)); out=signal.to_dict()
+        current=_asof(facts,pd.to_datetime(signal.signal_time,utc=True))
+        # _asof() selects the latest as-of-eligible fact per (security_id, variable,
+        # fiscal_period_end, unit) across ALL securities in `facts`, not just this
+        # signal's own issuer. Without this filter, a security with no facts for a
+        # given variable (e.g. KO/WMT have zero Liabilities facts at all) would
+        # silently pick up another issuer's most-recently-available fact for that
+        # variable instead of correctly reporting it missing -- a cross-security
+        # data leakage bug, not a methodology choice. Restricting `current` to the
+        # signal's own security before any variable selection closes that gap.
+        current=current.loc[current.security_id.eq(signal.security_id)]
+        out=signal.to_dict()
         for variable in FLOW_VARIABLES:
             ttm=_ttm(current.loc[current.variable.eq(variable)])
             prefix=f"{variable}_ttm"; out[prefix]=ttm.get("value")

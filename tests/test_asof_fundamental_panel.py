@@ -37,5 +37,36 @@ class AsofPanelTest(unittest.TestCase):
         self.assertFalse(result.market_cap_eligible.any()); self.assertFalse(result.duplicated(["research_date","security_id"]).any())
         stale=self.panel(self.signals(("2024-12-01",)),self.facts()); self.assertTrue(pd.isna(stale.loc[0,"market_cap"]))
 
+    def test_variable_missing_for_one_security_is_not_leaked_from_another(self):
+        # Regression test for a cross-security data-leakage bug: the
+        # per-signal FLOW_VARIABLES/STOCK_VARIABLES selection previously
+        # filtered the as-of-eligible facts only by `variable`, never by
+        # the signal's own `security_id`. In a combined multi-security
+        # build, a security with zero facts for a given variable (as KO
+        # and WMT genuinely have zero `Liabilities` facts in the real SEC
+        # data) would silently inherit another security's most-recently-
+        # available value for that variable instead of correctly reporting
+        # it missing. "BBB" here has no liabilities facts at all; it must
+        # stay missing even though "AAA" (built in the same call) does.
+        aaa_facts = self.facts()
+        bbb_facts = self.facts()
+        bbb_facts["security_id"] = "BBB"
+        bbb_facts["accession_number"] = bbb_facts["accession_number"] + "-bbb"
+        bbb_facts = bbb_facts.loc[bbb_facts.variable.ne("liabilities")].copy()
+
+        combined_facts = pd.concat([aaa_facts, bbb_facts], ignore_index=True)
+        combined_signals = pd.concat(
+            [self.signals(), self.signals(security_id="BBB")],
+            ignore_index=True,
+        )
+        result = build_weekly_fundamental_panel(
+            combined_signals, combined_facts, pd.DataFrame(columns=["security_id", "split_date", "split_ratio"]),
+            price_basis_as_of=pd.Timestamp("2024-06-07", tz="UTC"), market_data_download_timestamp="2024-06-08T00:00:00Z",
+        )
+        aaa_row = result.loc[result.security_id.eq("AAA")].iloc[0]
+        bbb_row = result.loc[result.security_id.eq("BBB")].iloc[0]
+        self.assertEqual(100, aaa_row["liabilities"])
+        self.assertTrue(pd.isna(bbb_row["liabilities"]))
+
 
 if __name__ == "__main__": unittest.main()
