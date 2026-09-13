@@ -33,7 +33,7 @@ Use its portfolio returns for a **monthly factor stability** appendix only. Pres
 | M3 — Features/labels | Construct five fixed features and five-day relative-return label. | For any observation, `asof_date < execution_date ≤ label_end`; a small fixture matches hand calculations. |
 | M4 — Validation | Implement date-level expanding/rolling splits with label maturation purge. | Tests show no training label overlaps a validation/test signal date; no random split path is exposed. |
 | M5 — Prediction | Fit zero baseline, univariate sort, Ridge and one boosting model. | A table reports date-level Rank IC, spread monotonicity, coverage and results by year for every model. |
-| M6 — Portfolio | Implement non-overlapping five-session rebalancing, drifted pre-trade positions, turnover, and cost scenarios. | Zero return/zero fee leaves NAV unchanged; costs lower NAV by exactly computed amount; initial/final trades are charged. |
+| M6 — Portfolio | Implement weekly-final-trading-day rebalancing, drifted pre-trade positions, turnover, and cost scenarios. | Zero return/zero fee leaves NAV unchanged; costs lower NAV by exactly computed amount; initial/final trades are charged. |
 | M7 — Robustness | Compare expanding history vs rolling three-year history; run liquidity and 0/5/10/20 bps sensitivity tables. | Only the pre-specified single extension changes; all other configuration hashes agree. |
 | M8 — Locked report | Run untouched final period once rules are locked; write research memo and interview narrative. | Results distinguish gross/net performance, limitations, years of failure, and next highest-value experiment. |
 
@@ -64,7 +64,7 @@ Every public function should have a fixture-based test. Exploratory notebooks ma
 
 ## MacBook execution budget
 
-Start with 100–300 tickers and 2010 onward. Persist daily bars as partitioned Parquet and features as Parquet. Use `pandas`, `numpy`, `scikit-learn`, `pyarrow`, and `yfinance`; do not introduce distributed processing, GPUs, Docker, Qlib, or an optimizer in v1. Add one model at a time.
+Start with 100–300 tickers and 2010 onward. Cache raw daily bars as local CSV during the provider audit; introduce Parquet only when a compatible runtime and a measured need justify it. Use `pandas`, `numpy`, `scikit-learn`, and `yfinance`; do not introduce distributed processing, GPUs, Docker, Qlib, or an optimizer in v1. Add one model at a time.
 
 ## Research log template
 

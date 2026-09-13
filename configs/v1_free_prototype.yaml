@@ -1,7 +1,21 @@
 project_name: us_equity_cross_sectional
 data_adapter: yahoo_daily_bars
-universe_snapshot: data/metadata/universe_YYYY-MM-DD.csv
+universe_snapshot: data/metadata/universe_2026-09-11.csv
 start_date: "2010-01-01"
+raw_data_frequency: daily
+research_dates: final_trading_day_of_week
+price_provider:
+  name: yfinance
+  auto_adjust: false
+  actions: true
+  raw_cache: data/raw/
+fundamentals:
+  provider: sec_edgar_company_facts
+  policy: as_filed
+  timing: submission_acceptance_timestamp_by_accession_or_next_trading_day_after_filing_date
+neutralization:
+  v1: size_only
+  industry: not_enabled_without_point_in_time_classification
 feature_windows:
   momentum_lookback: 252
   momentum_skip: 21
@@ -12,13 +26,35 @@ feature_windows:
 label:
   execution_lag_sessions: 1
   holding_sessions: 5
+  signal_time: close_of_weekly_research_date
+  execution_time: close_of_next_trading_session
+  return_interval: close_of_execution_session_to_close_five_sessions_later
+  horizons_trading_intervals: [1, 5, 20]
+price_series_policy:
+  economic_returns: adjusted_close
+  momentum_reversal_volatility: adjusted_close
+  dollar_volume: close_times_volume
+  amihud: absolute_adjusted_return_over_close_times_volume
+  split_day_amihud: excluded
+minimum_observations:
+  momentum_12_1: 253
+  momentum_6_1: 127
+  momentum_3_1: 64
+  prior_return_1d: 2
+  prior_return_5d: 6
+  prior_return_20d: 21
+  realized_vol_20d: 20
+  realized_vol_60d: 60
+  adv_20d: 20
+  adv_60d: 60
+  amihud_20d: 20
 models:
   - zero_baseline
   - univariate_sort
   - ridge
   - hist_gradient_boosting
 portfolio:
-  rebalance_every_sessions: 5
+  rebalance_schedule: weekly_final_trading_day
   quantile: 0.20
   long_gross_weight: 0.50
   short_gross_weight: -0.50

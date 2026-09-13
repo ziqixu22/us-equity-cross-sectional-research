@@ -17,3 +17,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.py[cod]
+
+# Build metadata from editable installs
+*.egg-info/
