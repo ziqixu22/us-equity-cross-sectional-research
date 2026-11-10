@@ -43,6 +43,22 @@ class AsofPanelTest(unittest.TestCase):
         self.assertEqual(50, result.loc[0, "revenue_ttm"])
         self.assertIn("rev-Q2-quarter", result.loc[0, "revenue_ttm_component_accessions"])
 
+    def test_trailing_cache_invalidates_for_amendment_and_updates_age(self):
+        facts = self.facts()
+        amendment = facts.loc[facts["accession_number"].eq("rev-FY")].copy()
+        amendment["value"] = 52
+        amendment["accession_number"] = "rev-FY-amended"
+        amendment["available_at"] = "2024-06-10 20:00:00+00:00"
+        # Preserve the repeated index to exercise callers with nonunique fact indices.
+        facts = pd.concat([facts, amendment])
+        signals = self.signals(("2024-05-31", "2024-06-07", "2024-06-14", "2024-06-21"))
+
+        result = self.panel(signals=signals, facts=facts)
+
+        self.assertEqual([50, 50, 52, 52], result["revenue_ttm"].tolist())
+        self.assertIn("rev-FY-amended", result.loc[2, "revenue_ttm_component_accessions"])
+        self.assertAlmostEqual(7.0, result.loc[3, "revenue_ttm_age_days"] - result.loc[2, "revenue_ttm_age_days"])
+
     def test_older_revenue_tag_survives_normalization(self):
         fact = {"val": 50, "start": "2020-01-01", "end": "2020-12-31",
                 "filed": "2021-02-15", "form": "10-K", "accn": "original"}

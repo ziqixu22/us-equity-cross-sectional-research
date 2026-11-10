@@ -73,7 +73,7 @@ def build_weekly_fundamental_panel(signals: pd.DataFrame, facts: pd.DataFrame, s
     required={"research_date","security_id","signal_time","price","split_history_complete"}
     missing=required.difference(signals.columns)
     if missing: raise ValueError(f"signals missing columns: {sorted(missing)}")
-    facts = facts.copy()
+    facts = facts.reset_index(drop=True)
     for column in ("available_at", "fiscal_period_start", "fiscal_period_end"):
         facts[column] = pd.to_datetime(facts[column], utc=True, format="mixed")
     if "multiple_share_class_flag" not in facts:
@@ -82,12 +82,21 @@ def build_weekly_fundamental_panel(signals: pd.DataFrame, facts: pd.DataFrame, s
         facts["concept_priority"] = 0
     issuer_facts = dict(tuple(facts.groupby("security_id")))
     records = []
+    trailing_cache = {}
     for _, signal in signals.iterrows():
         signal_time = pd.to_datetime(signal.signal_time, utc=True)
         current = _asof(issuer_facts.get(signal.security_id, facts.iloc[:0]), signal_time)
         out=signal.to_dict()
         for variable in FLOW_VARIABLES:
-            ttm=_ttm(current.loc[current.variable.eq(variable)])
+            flow = current.loc[current.variable.eq(variable)]
+            cache_key = (signal.security_id, variable)
+            cached = trailing_cache.get(cache_key)
+            # Reuse the accounting result only while the exact as-of inputs match.
+            # The availability age below is still recomputed for each signal.
+            if cached is None or not flow.index.equals(cached[0]):
+                cached = (flow.index, _ttm(flow))
+                trailing_cache[cache_key] = cached
+            ttm = cached[1]
             prefix=f"{variable}_ttm"; out[prefix]=ttm.get("value")
             out[f"{prefix}_component_accessions"]=ttm.get("component_accessions")
             if ttm:
