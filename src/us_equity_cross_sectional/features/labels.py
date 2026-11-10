@@ -19,6 +19,7 @@ def add_forward_return_labels(bars: pd.DataFrame, horizons: tuple[int, ...] = (1
     for horizon in horizons:
         if horizon <= 0:
             raise ValueError("forward-return horizon must be positive")
+        result[f"label_end_{horizon}d"] = dates.shift(-(horizon + 1))
         result[f"forward_return_{horizon}d"] = price.shift(-(horizon + 1)) / execution_price - 1
     return result
 
@@ -34,6 +35,10 @@ def add_relative_return_labels(panel: pd.DataFrame, horizons: tuple[int, ...] = 
             raise ValueError(f"missing forward-return label: {column}")
         benchmark = result.groupby("research_date", sort=False)[column].transform("mean")
         result[f"relative_return_{horizon}d"] = result[column] - benchmark
+        end_column = f"label_end_{horizon}d"
+        if end_column in result:
+            observed_end = result[end_column].where(result[column].notna())
+            result[end_column] = observed_end.groupby(result["research_date"]).transform("max")
     return result
 
 

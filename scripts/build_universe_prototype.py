@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pandas as pd
 import requests
-import yfinance as yf
 
 SOURCE_URL = "https://en.wikipedia.org/wiki/S%26P_100"
 START_DATE = "2010-01-01"
@@ -33,6 +32,8 @@ def fetch_symbols() -> pd.DataFrame:
 
 
 def history_for_symbol(symbol: str, start: str, end: str) -> pd.DataFrame:
+    import yfinance as yf
+
     return yf.Ticker(symbol).history(
         start=start, end=end, auto_adjust=False, actions=True, repair=False, keepna=True
     )
@@ -68,6 +69,8 @@ def summarize(symbol: str, history: pd.DataFrame) -> dict[str, object]:
 
 
 def main() -> None:
+    from importlib.metadata import version
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--end", default=date.today().isoformat())
@@ -135,7 +138,7 @@ def main() -> None:
     (root / "reports/data_quality_report.md").write_text("\n".join(report) + "\n")
     manifest = {
         "provider": "yfinance",
-        "provider_version": yf.__version__,
+        "provider_version": version("yfinance"),
         "downloaded_at": downloaded_at,
         "source_url": SOURCE_URL,
         "start_date": START_DATE,

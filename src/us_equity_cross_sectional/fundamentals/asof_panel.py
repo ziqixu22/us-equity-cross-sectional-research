@@ -2,72 +2,64 @@
 from __future__ import annotations
 
 import json
+
 import pandas as pd
 
 from us_equity_cross_sectional.features.labels import validate_weekly_panel_keys
 from us_equity_cross_sectional.fundamentals.market_cap import build_market_cap
-from us_equity_cross_sectional.fundamentals.sec_facts import standalone_quarter, ttm_from_quarters
+from us_equity_cross_sectional.fundamentals.sec_facts import ttm_from_quarters
 
 FLOW_VARIABLES = ("revenue", "net_income", "operating_income", "gross_profit", "capex")
 STOCK_VARIABLES = ("assets", "liabilities", "stockholders_equity", "cash")
 
 
 def _asof(facts: pd.DataFrame, signal_time: pd.Timestamp) -> pd.DataFrame:
-    eligible = facts.loc[facts["available_at"].le(signal_time)].copy()
-    if eligible.empty: return eligible
-    keys = ["security_id", "variable", "fiscal_period_end", "unit"]
-    return eligible.sort_values([*keys, "available_at", "accession_number"]).groupby(keys, as_index=False).tail(1)
-
-
-def _quarterly(flow: pd.DataFrame) -> pd.DataFrame:
-    """Standalone-quarter each duration fact via the tested ``standalone_quarter`` primitive.
-
-    A fiscal period with no compatible prior cumulative duration (or any other
-    incompatibility ``standalone_quarter`` rejects) is skipped rather than
-    raised, so one bad issuer-period never crashes the panel build.
-    """
-    rows = []
-    for _, group in flow.groupby(["security_id", "variable", "unit", "fiscal_year"], dropna=False):
-        group = group.sort_values("fiscal_period_end")
-        by_fp = {r.fiscal_period: r for r in group.itertuples()}
-        for fp, prior in (("Q1", None), ("Q2", "Q1"), ("Q3", "Q2"), ("FY", "Q3")):
-            row = by_fp.get(fp)
-            if row is None:
-                continue
-            prior_row = by_fp.get(prior) if prior else None
-            if prior and prior_row is None:
-                continue
-            try:
-                value = standalone_quarter(row.value, prior_row.value if prior_row is not None else None, fp)
-            except ValueError:
-                continue
-            accessions = [row.accession_number] if prior is None else [prior_row.accession_number, row.accession_number]
-            rows.append({
-                "security_id": row.security_id, "variable": row.variable, "unit": row.unit,
-                "end": row.fiscal_period_end, "value": value, "available_at": row.available_at,
-                "accessions": accessions, "row": row,
-            })
-    return pd.DataFrame(rows)
+    eligible = facts.loc[
+        facts["available_at"].le(signal_time) & facts["fiscal_period_end"].le(signal_time)
+    ]
+    keys = ["variable", "unit", "concept", "fiscal_period_start", "fiscal_period_end"]
+    return eligible.sort_values(["available_at", "accession_number"]).drop_duplicates(keys, keep="last")
 
 
 def _ttm(flow: pd.DataFrame) -> dict[str, object]:
-    """Sum the latest four standalone quarters via the tested ``ttm_from_quarters`` primitive.
+    """Use four adjacent quarters, keeping direct and cumulative facts distinct."""
+    quarters = []
+    for _, group in flow.dropna(subset=["fiscal_period_start", "value"]).groupby(
+        ["concept", "unit", "fiscal_period_start"], sort=False
+    ):
+        prior = None
+        for row in group.sort_values("fiscal_period_end").itertuples():
+            start, end = row.fiscal_period_start, row.fiscal_period_end
+            direct = 70 <= (end - start).days <= 110
+            if direct:
+                quarters.append((end, start, row.available_at, direct, row.value, (row.accession_number,), row))
+            elif prior is not None and 70 <= (end - prior.fiscal_period_end).days <= 110:
+                quarters.append((
+                    end, prior.fiscal_period_end + pd.Timedelta(days=1),
+                    max(row.available_at, prior.available_at), direct,
+                    row.value - prior.value, (prior.accession_number, row.accession_number), row,
+                ))
+            prior = row
 
-    Any incompatibility ``ttm_from_quarters`` rejects (fewer than four
-    quarters, mixed units, or a missing/NaN component) yields no TTM value
-    rather than a fabricated partial sum.
-    """
-    q = _quarterly(flow)
-    if len(q) < 4:
+    # Prefer the newest reported version for a quarter; break ties in favor of
+    # directly reported quarters, then use the configured concept order.
+    quarters.sort(key=lambda q: (q[0], q[2], q[3], -q[6].concept_priority))
+    latest_by_end = {q[0]: q for q in quarters}
+    trailing = list(latest_by_end.values())[-4:]
+    if len(trailing) < 4:
         return {}
-    q = q.sort_values("end").tail(4)
+    gaps = [(right[1] - left[0]).days for left, right in zip(trailing, trailing[1:])]
+    if any(gap < 1 or gap > 7 for gap in gaps):
+        return {}
     try:
-        value = ttm_from_quarters(list(q.value), list(q.unit))
+        value = ttm_from_quarters([q[4] for q in trailing], [q[6].unit for q in trailing])
     except ValueError:
         return {}
-    latest = q.iloc[-1]
-    lineage = list(dict.fromkeys(a for values in q.accessions for a in values))
-    return {"value": value, "available_at": q.available_at.max(), "component_accessions": json.dumps(lineage), "row": latest.row}
+    lineage = dict.fromkeys(accession for q in trailing for accession in q[5])
+    return {
+        "value": value, "available_at": max(q[2] for q in trailing),
+        "component_accessions": json.dumps(list(lineage)), "row": trailing[-1][6],
+    }
 
 
 def _lineage(prefix: str, row: object, signal_time: pd.Timestamp) -> dict[str, object]:
@@ -81,28 +73,38 @@ def build_weekly_fundamental_panel(signals: pd.DataFrame, facts: pd.DataFrame, s
     required={"research_date","security_id","signal_time","price","split_history_complete"}
     missing=required.difference(signals.columns)
     if missing: raise ValueError(f"signals missing columns: {sorted(missing)}")
-    facts=facts.copy(); facts["available_at"]=pd.to_datetime(facts["available_at"],utc=True); facts["fiscal_period_end"]=pd.to_datetime(facts["fiscal_period_end"],utc=True)
-    if "multiple_share_class_flag" not in facts: facts["multiple_share_class_flag"]=pd.NA
-    records=[]
+    facts = facts.reset_index(drop=True)
+    for column in ("available_at", "fiscal_period_start", "fiscal_period_end"):
+        facts[column] = pd.to_datetime(facts[column], utc=True, format="mixed")
+    if "multiple_share_class_flag" not in facts:
+        facts["multiple_share_class_flag"] = pd.NA
+    if "concept_priority" not in facts:
+        facts["concept_priority"] = 0
+    issuer_facts = dict(tuple(facts.groupby("security_id")))
+    records = []
+    trailing_cache = {}
     for _, signal in signals.iterrows():
-        current=_asof(facts,pd.to_datetime(signal.signal_time,utc=True))
-        # _asof() selects the latest as-of-eligible fact per (security_id, variable,
-        # fiscal_period_end, unit) across ALL securities in `facts`, not just this
-        # signal's own issuer. Without this filter, a security with no facts for a
-        # given variable (e.g. KO/WMT have zero Liabilities facts at all) would
-        # silently pick up another issuer's most-recently-available fact for that
-        # variable instead of correctly reporting it missing -- a cross-security
-        # data leakage bug, not a methodology choice. Restricting `current` to the
-        # signal's own security before any variable selection closes that gap.
-        current=current.loc[current.security_id.eq(signal.security_id)]
+        signal_time = pd.to_datetime(signal.signal_time, utc=True)
+        current = _asof(issuer_facts.get(signal.security_id, facts.iloc[:0]), signal_time)
         out=signal.to_dict()
         for variable in FLOW_VARIABLES:
-            ttm=_ttm(current.loc[current.variable.eq(variable)])
+            flow = current.loc[current.variable.eq(variable)]
+            cache_key = (signal.security_id, variable)
+            cached = trailing_cache.get(cache_key)
+            # Reuse the accounting result only while the exact as-of inputs match.
+            # The availability age below is still recomputed for each signal.
+            if cached is None or not flow.index.equals(cached[0]):
+                cached = (flow.index, _ttm(flow))
+                trailing_cache[cache_key] = cached
+            ttm = cached[1]
             prefix=f"{variable}_ttm"; out[prefix]=ttm.get("value")
             out[f"{prefix}_component_accessions"]=ttm.get("component_accessions")
-            if ttm: out.update(_lineage(prefix,ttm["row"],pd.to_datetime(signal.signal_time,utc=True)))
+            if ttm:
+                out.update(_lineage(prefix, ttm["row"], signal_time))
+                out[f"{prefix}_available_at"] = ttm["available_at"]
+                out[f"{prefix}_age_days"] = (signal_time - ttm["available_at"]).total_seconds() / 86400
         for variable in STOCK_VARIABLES:
-            selected=current.loc[current.variable.eq(variable)].sort_values(["available_at","fiscal_period_end","accession_number"])
+            selected=current.loc[current.variable.eq(variable)].sort_values(["fiscal_period_end", "available_at", "concept_priority", "accession_number"], ascending=[True, True, False, True])
             if selected.empty: out[variable]=None; continue
             fact=selected.iloc[-1]; out[variable]=fact.value; out.update(_lineage(variable,fact,pd.to_datetime(signal.signal_time,utc=True)))
             out[f"{variable}_instant_date"]=fact.fiscal_period_end

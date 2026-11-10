@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from run_transaction_costs import apply_costs  # noqa: E402
+from us_equity_cross_sectional.portfolio.long_short import build_weekly_long_short_returns
 
 
 class TransactionCostTest(unittest.TestCase):
@@ -47,6 +48,25 @@ class TransactionCostTest(unittest.TestCase):
         expected_cost = row["turnover"] * row["gross_exposure"] * (10 / 10_000)
         self.assertAlmostEqual(expected_cost, row["trading_cost"], places=10)
         self.assertAlmostEqual(row["portfolio_return"] - expected_cost, row["net_return"], places=10)
+
+    def test_signed_trading_includes_drift_entry_and_liquidation(self):
+        first = pd.Timestamp("2024-01-05")
+        second = pd.Timestamp("2024-01-12")
+        frame = pd.DataFrame({
+            "research_date": [first] * 3 + [second] * 3,
+            "security_id": ["short", "middle", "long"] * 2,
+            "prediction": [0, 1, 2] * 2,
+            "holding_return": [0, 0, 0.1, 0, 0, 0],
+            "execution_date": pd.to_datetime(["2024-01-08"] * 3 + ["2024-01-16"] * 3),
+            "holding_end_date": pd.to_datetime(["2024-01-16"] * 3 + ["2024-01-22"] * 3),
+        })
+        returns = build_weekly_long_short_returns(frame, frame, return_column="holding_return", track_trades=True)
+        costed = apply_costs(returns, 10)
+        self.assertEqual(2, len(costed))
+        self.assertAlmostEqual(2.0, returns.loc[0, "traded_notional"])
+        self.assertAlmostEqual(2.0 + 1 - 1 / 1.1, returns.loc[1, "traded_notional"])
+        self.assertAlmostEqual(0.002, costed.loc[0, "trading_cost"])
+
 
 
 if __name__ == "__main__":

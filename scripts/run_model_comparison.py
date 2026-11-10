@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import warnings
-from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
+
+from us_equity_cross_sectional.research.run_paths import PANEL_PATH, RUN_ROOT as ROOT
 
 from us_equity_cross_sectional.research.model_evaluation import (
     evaluate_model_chronologically, pooled_summary, prediction_turnover,
@@ -15,7 +16,6 @@ from us_equity_cross_sectional.research.model_evaluation import (
 
 warnings.filterwarnings("ignore")
 
-ROOT = Path(__file__).resolve().parents[1]
 FIG_DIR = ROOT / "reports/figures"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -36,8 +36,7 @@ FEATURE_GROUPS = {"price_only": PRICE_FACTORS, "fundamentals_only": FUNDAMENTAL_
 
 
 def main() -> None:
-    panel = pd.read_csv(ROOT / "data/processed/research_panel_2026-09-11.csv")
-    panel["research_date"] = pd.to_datetime(panel["research_date"])
+    panel = pd.read_csv(PANEL_PATH, parse_dates=['research_date', 'label_end_5d'])
 
     all_rows = []
     all_preds = {}
