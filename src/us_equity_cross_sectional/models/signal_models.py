@@ -64,14 +64,14 @@ def build_model(name: str):
         return LGBMRegressor(
             n_estimators=200, max_depth=3, num_leaves=7, learning_rate=0.05,
             min_child_samples=20, subsample=0.8, colsample_bytree=0.8,
-            random_state=0, verbosity=-1,
+            random_state=0, verbosity=-1, n_jobs=1,
         )
     raise ValueError(f"unknown model name: {name}")
 
 
 def fit_preprocessing(train_X: pd.DataFrame) -> tuple[SimpleImputer, StandardScaler]:
     """Median-impute then standardize, both fit on TRAIN data only."""
-    imputer = SimpleImputer(strategy="median")
+    imputer = SimpleImputer(strategy="median", keep_empty_features=True)
     imputer.fit(train_X)
     imputed = imputer.transform(train_X)
     scaler = StandardScaler()

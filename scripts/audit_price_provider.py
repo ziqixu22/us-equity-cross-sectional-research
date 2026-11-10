@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+from importlib.metadata import version
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-import yfinance as yf
 
 from us_equity_cross_sectional.data.validation import validate_daily_bars
 
@@ -18,6 +18,8 @@ SYMBOLS = ["AAPL", "MSFT", "KO", "JNJ", "XOM", "JPM", "WMT", "NVDA", "AMZN", "TS
 
 def download_history(symbol: str, start: str, end: str) -> pd.DataFrame:
     """Return the unmodified field set supplied by yfinance for one ticker."""
+    import yfinance as yf
+
     return yf.Ticker(symbol).history(
         start=start, end=end, auto_adjust=False, actions=True, repair=False, keepna=True
     )
@@ -71,23 +73,26 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--start", default="1990-01-01")
     parser.add_argument("--end", default=date.today().isoformat())
+    parser.add_argument("--snapshot", type=date.fromisoformat, default=date.today())
+    parser.add_argument("--symbols", nargs="+", default=SYMBOLS)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args()
 
     downloaded_at = datetime.now(timezone.utc).isoformat()
-    cache_dir = args.root / "data/raw/yfinance_provider_audit" / date.today().isoformat()
+    cache_dir = args.root / "data/raw/yfinance_provider_audit" / args.snapshot.isoformat()
     cache_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, object]] = []
     failures: dict[str, str] = {}
     histories: dict[str, pd.DataFrame] = {}
-    for symbol in SYMBOLS:
+    for symbol in args.symbols:
         try:
             history = download_history(symbol, args.start, args.end)
             if history.empty:
                 raise ValueError("empty response")
+            result = audit_history(symbol, history)
             history.to_csv(cache_dir / f"{symbol}.csv")
             histories[symbol] = history
-            results.append(audit_history(symbol, history))
+            results.append(result)
         except Exception as exc:  # provider failures must be recorded, not dropped
             failures[symbol] = f"{type(exc).__name__}: {exc}"
 
@@ -98,19 +103,21 @@ def main() -> None:
 
     manifest = {
         "provider": "yfinance",
-        "provider_version": yf.__version__,
+        "provider_version": version("yfinance"),
         "downloaded_at": downloaded_at,
         "request": {"start": args.start, "end": args.end, "auto_adjust": False, "actions": True},
-        "symbols": SYMBOLS,
+        "symbols": args.symbols,
         "raw_cache": str(cache_dir.relative_to(args.root)),
         "successful_symbols": [result["symbol"] for result in results],
         "failures": failures,
         "audits": results,
     }
-    output = args.root / "data/manifests" / f"yfinance_provider_audit_{date.today().isoformat()}.json"
+    output = args.root / "data/manifests" / f"yfinance_provider_audit_{args.snapshot.isoformat()}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(manifest, indent=2, default=str) + "\n")
     print(output)
+    if failures:
+        raise SystemExit(f"Yahoo downloads failed: {failures}")
 
 
 if __name__ == "__main__":

@@ -22,3 +22,6 @@ __pycache__/
 
 # Build metadata from editable installs
 *.egg-info/
+
+# Isolated research runs
+runs/

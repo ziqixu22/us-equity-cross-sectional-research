@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+from time import sleep
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -20,11 +22,9 @@ ISSUERS = {
     "WMT": "0000104169",
     "NVDA": "0001045810",
 }
-HEADERS = {"User-Agent": "US Equity Cross-Sectional Research Lab ziqixu22"}
-
-
-def get_json(url: str) -> dict[str, object]:
-    response = requests.get(url, headers=HEADERS, timeout=30)
+def get_json(url: str, user_agent: str) -> dict[str, object]:
+    sleep(0.2)
+    response = requests.get(url, headers={"User-Agent": user_agent}, timeout=30)
     response.raise_for_status()
     return response.json()
 
@@ -73,9 +73,13 @@ def company_facts_summary(companyfacts: dict[str, object]) -> dict[str, object]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--snapshot", type=date.fromisoformat, default=date.today())
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     args = parser.parse_args()
-    cache_dir = args.root / "data/raw/sec_provider_audit" / date.today().isoformat()
+    user_agent = os.environ.get("SEC_USER_AGENT", "").strip()
+    if not user_agent or "@" not in user_agent:
+        parser.error("Set SEC_USER_AGENT to your name or organization and contact email.")
+    cache_dir = args.root / "data/raw/sec_provider_audit" / args.snapshot.isoformat()
     cache_dir.mkdir(parents=True, exist_ok=True)
     audit: dict[str, object] = {
         "provider": "SEC EDGAR",
@@ -85,8 +89,8 @@ def main() -> None:
     }
     for symbol, cik in ISSUERS.items():
         try:
-            submissions = get_json(f"https://data.sec.gov/submissions/CIK{cik}.json")
-            companyfacts = get_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json")
+            submissions = get_json(f"https://data.sec.gov/submissions/CIK{cik}.json", user_agent)
+            companyfacts = get_json(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json", user_agent)
             (cache_dir / f"{symbol}_submissions.json").write_text(json.dumps(submissions))
             (cache_dir / f"{symbol}_companyfacts.json").write_text(json.dumps(companyfacts))
             audit["issuers"][symbol] = {
@@ -96,10 +100,12 @@ def main() -> None:
             }
         except Exception as exc:  # preserve failed requests for the data-quality report
             audit["failures"][symbol] = f"{type(exc).__name__}: {exc}"
-    output = args.root / "data/manifests" / f"sec_fundamentals_audit_{date.today().isoformat()}.json"
+    output = args.root / "data/manifests" / f"sec_fundamentals_audit_{args.snapshot.isoformat()}.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(audit, indent=2) + "\n")
     print(output)
+    if audit["failures"]:
+        raise SystemExit(f"SEC downloads failed: {audit['failures']}")
 
 
 if __name__ == "__main__":

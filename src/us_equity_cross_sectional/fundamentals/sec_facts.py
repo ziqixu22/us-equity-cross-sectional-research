@@ -27,21 +27,25 @@ def normalize_company_facts(security_id: str, cik: str, companyfacts: dict, subm
     rows = []
     for variable, (taxonomy, concepts, unit, kind) in CONCEPT_REGISTRY.items():
         namespace = companyfacts.get("facts", {}).get(taxonomy, {})
-        selected = next((concept for concept in concepts if concept in namespace), None)
-        if not selected or unit not in namespace[selected].get("units", {}):
-            continue
-        for fact in namespace[selected]["units"][unit]:
-            row = {"security_id": security_id, "cik": cik, "variable": variable, "taxonomy": taxonomy,
-                   "concept": selected, "unit": unit, "kind": kind, "value": fact.get("val"),
-                   "fiscal_period_end": fact.get("end"), "fiscal_period_start": fact.get("start"),
-                   "fiscal_year": fact.get("fy"), "fiscal_period": fact.get("fp"), "form": fact.get("form"),
-                   "accession_number": fact.get("accn"), "filed_date": fact.get("filed"), "mapping_confidence": "standard_us_gaap"}
-            rows.append(row)
+        for priority, concept in enumerate(concepts):
+            for fact in namespace.get(concept, {}).get("units", {}).get(unit, []):
+                form = str(fact.get("form", ""))
+                if form.removesuffix("/A") not in {"10-K", "10-Q"}:
+                    continue
+                rows.append({
+                    "security_id": security_id, "cik": cik, "variable": variable,
+                    "taxonomy": taxonomy, "concept": concept, "concept_priority": priority,
+                    "unit": unit, "kind": kind, "value": fact.get("val"),
+                    "fiscal_period_end": fact.get("end"), "fiscal_period_start": fact.get("start"),
+                    "fiscal_year": fact.get("fy"), "fiscal_period": fact.get("fp"), "form": form,
+                    "accession_number": fact.get("accn"), "filed_date": fact.get("filed"),
+                    "mapping_confidence": "standard_us_gaap",
+                })
     facts = pd.DataFrame(rows)
     if facts.empty:
         return facts
-    facts = facts.merge(filing_meta, on="accession_number", how="left", suffixes=("", "_submission"))
-    facts["acceptance_datetime"] = pd.to_datetime(facts["acceptance_datetime"], utc=True, errors="coerce")
+    facts = facts.merge(filing_meta, on="accession_number", how="left", suffixes=("", "_submission"), validate="many_to_one")
+    facts["acceptance_datetime"] = pd.to_datetime(facts["acceptance_datetime"], utc=True, format="mixed", errors="coerce")
     facts["filed_date"] = pd.to_datetime(facts["filed_date"], utc=True, errors="coerce")
     facts["available_at"] = facts["acceptance_datetime"].fillna(facts["filed_date"] + pd.Timedelta(days=1))
     facts["is_amendment"] = facts["form"].fillna("").str.endswith("/A")

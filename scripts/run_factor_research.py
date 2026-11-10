@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import warnings
-from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
@@ -10,13 +9,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from us_equity_cross_sectional.research.run_paths import PANEL_PATH, RUN_ROOT as ROOT
+
 from us_equity_cross_sectional.research.factor_evaluation import (
     daily_rank_ic, evaluate_all_factors, quantile_returns, yearly_ic_stability,
 )
 
 warnings.filterwarnings("ignore")
 
-ROOT = Path(__file__).resolve().parents[1]
 FIG_DIR = ROOT / "reports/figures"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -35,7 +35,7 @@ PRIMARY_LABEL = "relative_return_5d"
 
 
 def main() -> None:
-    panel = pd.read_csv(ROOT / "data/processed/research_panel_2026-09-11.csv")
+    panel = pd.read_csv(PANEL_PATH)
     panel["research_date"] = pd.to_datetime(panel["research_date"])
 
     metrics = evaluate_all_factors(panel, ALL_FACTORS, primary_label=PRIMARY_LABEL)

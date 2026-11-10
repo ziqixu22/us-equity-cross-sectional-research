@@ -10,13 +10,14 @@ the existing weekly predictions), all still expanding-window / chronological.
 from __future__ import annotations
 
 import warnings
-from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+
+from us_equity_cross_sectional.research.run_paths import PANEL_PATH, RUN_ROOT as ROOT
 from scipy import stats
 
 from us_equity_cross_sectional.research.factor_evaluation import yearly_ic_stability
@@ -26,7 +27,6 @@ from us_equity_cross_sectional.research.model_evaluation import (
 
 warnings.filterwarnings("ignore")
 
-ROOT = Path(__file__).resolve().parents[1]
 FIG_DIR = ROOT / "reports/figures"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -41,8 +41,7 @@ WEAK_FACTORS = ["amihud_20d", "operating_margin", "book_to_market", "leverage", 
 
 
 def main() -> None:
-    panel = pd.read_csv(ROOT / "data/processed/research_panel_2026-09-11.csv")
-    panel["research_date"] = pd.to_datetime(panel["research_date"])
+    panel = pd.read_csv(PANEL_PATH, parse_dates=['research_date', 'label_end_1d', 'label_end_5d', 'label_end_20d'])
     factor_metrics = pd.read_csv(ROOT / "reports/factor_metrics.csv")
 
     checks = {}

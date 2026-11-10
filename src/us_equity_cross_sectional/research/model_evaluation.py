@@ -1,7 +1,7 @@
 """Chronological expanding-window out-of-sample evaluation for signal-combination models.
 
 No random shuffling anywhere in this module: every split is defined by a
-cutoff date, train is everything strictly before it, test is a block of
+cutoff date, train uses labels already realized before it, test is a block of
 weeks after it. This matches the point-in-time discipline used throughout
 this project -- a model must never see a future observation during
 training, and a model's hyperparameters/preprocessing statistics
@@ -78,14 +78,26 @@ def evaluate_model_chronologically(
     one row per out-of-sample observation (date, security, prediction,
     actual label) across all folds, for downstream portfolio construction.
     """
-    frame = panel[[date_column, "security_id", label_column, *feature_columns]].copy()
-    frame = frame.dropna(subset=[label_column])
+    end_column = f"label_end_{label_column.rsplit('_', 1)[-1]}"
+    columns = [date_column, "security_id", label_column, *feature_columns]
+    # Custom/legacy panels without timing retain their caller-defined split.
+    # The runnable research scripts require label ends for every tested horizon.
+    has_label_end = end_column in panel
+    if has_label_end:
+        columns.append(end_column)
+    frame = panel[columns].dropna(subset=[label_column]).copy()
+    if has_label_end:
+        frame[end_column] = pd.to_datetime(frame[end_column])
+        if (frame[end_column].isna() | frame[end_column].le(frame[date_column])).any():
+            raise ValueError(f"{end_column} must be after the signal date for every realized label")
     folds = chronological_expanding_folds(frame[date_column], n_folds=n_folds, min_train_fraction=min_train_fraction)
 
     fold_rows = []
     pred_rows = []
     for fold_i, (train_end, test_start, test_end) in enumerate(folds):
         train = frame.loc[frame[date_column] < train_end]
+        if has_label_end:
+            train = train.loc[train[end_column].lt(test_start)]
         test = frame.loc[frame[date_column].between(test_start, test_end)]
         if len(train) < 30 or test.empty:
             continue

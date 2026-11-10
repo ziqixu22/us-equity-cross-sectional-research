@@ -1,6 +1,7 @@
 import unittest
 import pandas as pd
 from us_equity_cross_sectional.fundamentals.asof_panel import build_weekly_fundamental_panel
+from us_equity_cross_sectional.fundamentals.sec_facts import normalize_company_facts
 
 
 class AsofPanelTest(unittest.TestCase):
@@ -30,6 +31,28 @@ class AsofPanelTest(unittest.TestCase):
         result=self.panel()
         self.assertEqual(50,result.loc[0,"revenue_ttm"]); self.assertEqual('["rev-Q1", "rev-Q2", "rev-Q3", "rev-FY"]',result.loc[0,"revenue_ttm_component_accessions"])
         self.assertEqual(100,result.loc[0,"assets"]); self.assertTrue(result.loc[0,"market_cap_eligible"]); self.assertEqual(1000,result.loc[0,"market_cap"])
+
+    def test_same_period_quarter_does_not_overwrite_cumulative_input_to_ttm(self):
+        facts = self.facts()
+        quarter = facts.iloc[[1]].copy()
+        quarter["fiscal_period_start"] = "2023-04-01"
+        quarter["value"] = 12
+        quarter["accession_number"] = "rev-Q2-quarter"
+        facts = pd.concat([facts, quarter], ignore_index=True)
+        result = self.panel(facts=facts)
+        self.assertEqual(50, result.loc[0, "revenue_ttm"])
+        self.assertIn("rev-Q2-quarter", result.loc[0, "revenue_ttm_component_accessions"])
+
+    def test_older_revenue_tag_survives_normalization(self):
+        fact = {"val": 50, "start": "2020-01-01", "end": "2020-12-31",
+                "filed": "2021-02-15", "form": "10-K", "accn": "original"}
+        newer = dict(fact, val=100, start="2023-01-01", end="2023-12-31", filed="2024-02-15", accn="newer")
+        payload = {"facts": {"us-gaap": {
+            "RevenueFromContractWithCustomerExcludingAssessedTax": {"units": {"USD": [newer]}},
+            "SalesRevenueNet": {"units": {"USD": [fact]}},
+        }}}
+        normalized = normalize_company_facts("AAA", "1", payload, {})
+        self.assertEqual(set(normalized.accession_number), {"original", "newer"})
 
     def test_unavailable_stale_multiple_class_and_unique_keys(self):
         facts=self.facts(); facts.loc[facts.variable.eq("shares_outstanding"),"multiple_share_class_flag"]=True

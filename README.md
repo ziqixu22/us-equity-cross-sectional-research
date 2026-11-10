@@ -37,17 +37,14 @@ Final Report / Resume / Interview Summary
 ## Data and point-in-time methodology
 
 Universe: 8 large-cap U.S. equities (AAPL, MSFT, KO, JNJ, XOM, JPM, WMT,
-NVDA) — the issuer set with usable SEC as-filed fundamentals already
-ingested in this repository. Prices come from a cached Yahoo Finance
-snapshot; fundamentals come from SEC EDGAR company facts.
+NVDA). The runner caches Yahoo Finance prices and SEC EDGAR Company Facts
+and submissions for this fixed universe.
 
-Every fundamental value used on a given research date is the value that
-would actually have been known as of that date: fundamentals are keyed off
-SEC filing accession/acceptance timestamps (not fiscal period end), with
-explicit amendment-timing handling, quarter/YTD/TTM accounting transforms,
-and point-in-time shares outstanding for market-cap eligibility. No factor
-or label in this study uses information unavailable as of its research
-date, and no factor sign was ever flipped based on realized performance.
+The fundamental panel uses SEC filing acceptance timestamps where available
+and a conservative filing-date fallback otherwise. It retains accession
+lineage, accounts for amendments and quarter/YTD/TTM durations, and uses
+as-filed shares outstanding for market-cap eligibility. Forward returns
+serve as outcome labels. Factor signs are fixed before evaluation.
 
 This is a deliberately small **prototype** universe, not a
 production-scale study — see [Limitations](#limitations).
@@ -87,12 +84,16 @@ methodology and results:
 
 ## Transaction costs
 
-Turnover-based cost model at 0/5/10/20/50 bps, `net_return = gross_return
-- turnover * gross_exposure * cost_bps`. No market-impact model. Full
-methodology and results:
-[`reports/transaction_costs.md`](reports/transaction_costs.md).
+Trading cost scenarios use 0/5/10/20/50 bps per unit of traded notional.
+The [historical cost report](reports/transaction_costs.md) documents the
+original turnover proxy.
 
-## Key empirical results
+## Historical V1 results
+
+The figures below and the linked narrative reports archive the original study.
+The revised pipeline changes training-label timing, SEC duration handling,
+holding periods, and trading-cost accounting. Results from a new run are
+written to `research_summary.md`.
 
 | Stage | Headline result |
 |---|---|
@@ -125,10 +126,8 @@ primary metric throughout).
   history was not available to rebuild in this environment; this is a
   documented scope decision, not a silent gap.
 - Prototype universe is not survivorship-bias-free.
-- Two specific, unresolved fundamentals-pipeline data-quality issues (a
-  TTM duration-collision bug and a single-candidate concept-selection
-  gap) limit confidence in fundamental-factor results specifically — see
-  `reports/fundamental_factor_audit.md`.
+- The historical fundamental-factor results are affected by the two accounting issues described in
+  `reports/fundamental_factor_audit.md`. The revised pipeline retains duration variants and registered concept aliases.
 - Portfolio headline Sharpe/return figures in Stage 3 are gross of costs;
   see Stage 4 for cost-adjusted figures.
 - No market-impact or capacity model.
@@ -147,31 +146,63 @@ primary metric throughout).
 ├── scripts/              # Panel build and stage-by-stage research scripts
 ├── reports/              # All generated research reports, metrics CSVs, and figures
 ├── docs/                 # Resume bullets, data contracts
-└── tests/                # Unit tests (91 passing)
+└── tests/                # Unit tests
 ```
 
-## Reproducibility
+## Reproduce the research
+
+Install the package and run the test suite from the repository root with Python 3.10 or later.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
-
-# run tests
-pytest tests/ -q
-
-# rebuild the research panel and rerun each stage (all read/write reports/ and data/processed/)
-python3 scripts/build_research_panel.py
-python3 scripts/run_factor_research.py
-python3 scripts/run_model_comparison.py
-python3 scripts/run_portfolio.py
-python3 scripts/run_transaction_costs.py
-python3 scripts/run_robustness.py
+python -m pip install -e ".[dev]"
+python -m pytest -q
 ```
 
-Raw data and large processed panels are gitignored; the scripts above
-regenerate them from `data/raw/` (price snapshot) and the SEC fundamentals
-ingestion already committed under `src/us_equity_cross_sectional/fundamentals/`.
+Set `SEC_USER_AGENT` in your shell to your name or organization followed by a contact email.
+See the [SEC developer guidance](https://www.sec.gov/about/developer-resources).
+Run the entire pipeline in a dedicated output directory.
+
+```bash
+export SEC_USER_AGENT="Researcher name contact@example.com"
+python scripts/run_research.py --as-of 2026-09-11 --run-dir runs/2026-09-11
+```
+
+The command downloads the eight Yahoo histories and SEC Company Facts and submissions,
+then generates the accounting panel, fundamental factors, combined research panel,
+factor and model comparisons, portfolio, costs, robustness checks, and
+`reports/research_summary.md`. The price cutoff is exclusive. A fresh download can
+differ from the archived snapshot because providers revise their data. The manifest
+records retrieval information and a successful run records SHA-256 hashes of all
+inputs and package versions. An incomplete provider download stops the run and records
+which requests failed.
+
+For an offline rerun, place the cached files in the following structure inside the run
+directory and add `--offline` to the same command. Cached files and outputs stay local.
+
+| Path inside run directory | Required inputs |
+|---|---|
+| `data/raw/yfinance_provider_audit/<as-of>/` | Eight ticker CSVs with daily bars and corporate actions |
+| `data/raw/sec_provider_audit/<as-of>/` | `<ticker>_companyfacts.json` and `<ticker>_submissions.json` for all eight tickers |
+| `data/manifests/` | `yfinance_provider_audit_<as-of>.json` and `sec_fundamentals_audit_<as-of>.json` |
+
+### Revised methodology
+
+- Market features use the last observed session of each Friday-ended week.
+  For SEC facts, the cutoff is conservatively set at 1:00 p.m. ET to accommodate
+  shortened sessions. Reports accepted later that day enter the next weekly signal.
+- The model keeps its next-session-close entry and fixed 1-, 5-, or 20-session labels.
+  Each fold purges training observations whose labels mature on or after the first
+  test signal date.
+- The weekly portfolio holds to the following rebalance's execution close.
+  Costs use signed position changes against drifted gross weights, including
+  entry and liquidation. Sharpe uses annualized arithmetic mean excess return
+  over annualized volatility, with a zero risk-free rate.
+- Comparisons remain exploratory on the frozen eight-name universe. Results on
+  overlapping historical dates are descriptive because price-only Ridge was selected
+  in the original study. Cost sensitivity covers trading fees with a gross-weight
+  drift approximation. Borrow fees and market impact are outside the model.
 
 ## For recruiters / interviewers
 

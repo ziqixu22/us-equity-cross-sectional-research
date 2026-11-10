@@ -1,36 +1,30 @@
 """Stage 4: apply turnover-based trading costs to the Stage 3 portfolio return series."""
 from __future__ import annotations
 
-from pathlib import Path
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from us_equity_cross_sectional.research.run_paths import RUN_ROOT as ROOT
+
 from us_equity_cross_sectional.portfolio.long_short import cumulative_nav, portfolio_performance_metrics
 
-ROOT = Path(__file__).resolve().parents[1]
 FIG_DIR = ROOT / "reports/figures"
 FIG_DIR.mkdir(parents=True, exist_ok=True)
 COST_BPS = (0, 5, 10, 20, 50)
 
 
 def apply_costs(returns: pd.DataFrame, cost_bps: float) -> pd.DataFrame:
-    """net_return = gross_return - trading_cost, cost = turnover * gross_exposure * cost_bps.
-
-    Turnover here is the fraction of the combined long+short name set that
-    changed since the prior rebalance (see ``long_short.build_weekly_long_short_returns``).
-    Trading a name in or out means trading its full leg weight, so the
-    realistic dollar amount traded that week is turnover * gross_exposure
-    (200%) of the book, each side of which pays ``cost_bps`` on the
-    notional traded. The first rebalance has undefined turnover (no prior
-    portfolio to trade from) and is excluded from the cost-adjusted series
-    rather than assigned a fabricated cost.
-    """
-    out = returns.dropna(subset=["turnover"]).copy()
-    cost_rate = cost_bps / 10_000
-    out["trading_cost"] = out["turnover"] * out["gross_exposure"] * cost_rate
+    """Apply the quoted cost to traded notional, with support for archived returns."""
+    if "traded_notional" in returns:
+        out = returns.copy()
+        traded = out["traded_notional"]
+    else:
+        out = returns.dropna(subset=["turnover"]).copy()
+        traded = out["turnover"] * out["gross_exposure"]
+    out["trading_cost"] = traded * (cost_bps / 10_000)
     out["net_return"] = out["portfolio_return"] - out["trading_cost"]
     return out
 
@@ -46,7 +40,9 @@ def main() -> None:
     for variant_name, returns in [("equal_weight", equal), ("inverse_vol", risk_adj)]:
         for bps in COST_BPS:
             costed = apply_costs(returns, bps)
-            metrics = portfolio_performance_metrics(costed, return_column="net_return")
+            metrics = portfolio_performance_metrics(
+                costed, return_column="net_return", arithmetic_sharpe="traded_notional" in costed
+            )
             rows.append({"variant": variant_name, "cost_bps": bps, **metrics})
             if bps in (0, 10, 50):
                 nav_curves[(variant_name, bps)] = cumulative_nav(costed, return_column="net_return")

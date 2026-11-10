@@ -97,6 +97,18 @@ class ModelEvaluationTest(unittest.TestCase):
         for _, row in fold_metrics.iterrows():
             self.assertLessEqual(row["train_end"], row["test_start"])
 
+    def test_purges_training_labels_maturing_on_or_after_first_test_signal(self):
+        panel = _synthetic_panel(n_dates=80, n_names=6)
+        panel["relative_return_20d"] = panel["label"]
+        panel["label_end_20d"] = panel["research_date"] + pd.Timedelta(weeks=4)
+        metrics, _ = evaluate_model_chronologically(
+            panel, ["f1", "f2"], "relative_return_20d", "ridge", n_folds=3, min_train_fraction=0.5,
+        )
+        for row in metrics.itertuples():
+            expected = panel["label_end_20d"].lt(row.test_start).sum()
+            self.assertEqual(expected, row.n_train)
+            self.assertEqual(4 * 6, panel["research_date"].lt(row.test_start).sum() - row.n_train)
+
     def test_pooled_summary_matches_fold_means(self):
         panel = _synthetic_panel(n_dates=100, n_names=8)
         fold_metrics, _ = evaluate_model_chronologically(panel, ["f1", "f2"], "label", "ols", n_folds=4)
